@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulateur IR Maroc — Calculez votre salaire net</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            morocco: {
+              red: '#c1272d',
+              green: '#006233',
+              dark: '#032313',
+              gold: '#d4af37',
+              emerald: '#059669',
+            },
+            slate: {
+              850: '#151e2e',
+              900: '#0f172a',
+              950: '#070b14',
+            }
+          },
+          boxShadow: {
+            'glow-emerald': '0 0 35px -5px rgba(16, 185, 129, 0.3)',
+            'glow-blue': '0 0 35px -5px rgba(59, 130, 246, 0.3)',
+            'glow-purple': '0 0 35px -5px rgba(168, 85, 247, 0.3)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Framer Motion -->
+  <script src="https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js"></script>
+  
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <!-- Babel Standalone for in-browser JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .custom-gradient-bg {
+      background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0) 50%),
+                  radial-gradient(circle at 100% 50%, rgba(59, 130, 246, 0.08) 0%, rgba(15, 23, 42, 0) 50%),
+                  radial-gradient(circle at 0% 100%, rgba(193, 39, 45, 0.08) 0%, rgba(15, 23, 42, 0) 50%);
+    }
+    .noise-overlay {
+      background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200 min-h-screen custom-gradient-bg noise-overlay">
+  <div id="root">
+    <div class="flex items-center justify-center min-h-screen">
+      <div class="text-center space-y-4">
+        <div class="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p class="text-slate-400 font-medium">Chargement du simulateur d'IR Maroc...</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+    const { motion } = window.Motion;
+
+    // --- FORMULAS & CALCULATION ENGINE ---
+    // All numbers match the Moroccan CGI (Code Général des Impôts - LF 2025 art. 73 & 74) & Reform Proposal
+    function calculateIRSimulation(brutMensuel, dependents = 0) {
+      const brut = Math.max(0, Number(brutMensuel) || 0);
+      const dep = Math.min(6, Math.max(0, Number(dependents) || 0));
+      
+      const brutAnnuel = brut * 12;
+      
+      // Cotisations Sociales
+      // CNSS : 4.48% plafonné à 6000 DH/mois
+      const cnssMois = Math.min(brut, 6000) * 0.0448;
+      // AMO : 2.26% sans plafond
+      const amoMois = brut * 0.0226;
+      const totalCotisationsMois = cnssMois + amoMois;
+      const totalCotisationsAn = totalCotisationsMois * 12;
+
+      // Frais Professionnels (Déduction forfaitaire)
+      // Seuil brut annuel = 78 000 DH. Taux 35% si <= 78000, 25% si > 78000. Plafond = 35 000 DH/an
+      const tauxFraisPro = brutAnnuel <= 78000 ? 0.35 : 0.25;
+      const fraisProMois = Math.min(brut * tauxFraisPro, 35000 / 12);
+      const fraisProAn = fraisProMois * 12;
+
+      // Revenu Net Imposable (RNI)
+      const rniMois = Math.max(0, brut - totalCotisationsMois - fraisProMois);
+      const rniAnnuel = rniMois * 12;
+
+      // Déduction charges de famille : 500 DH/an par personne (max 6)
+      const deductionFamilleAn = dep * 500;
+      const deductionFamilleMois = deductionFamilleAn / 12;
+
+      // --- BARÈME ACTUEL (LF 2025, applicable 2026) ---
+      // 0 - 40 000 : 0% (0)
+      // 40 000 - 60 000 : 10% (4 000)
+      // 60 000 - 80 000 : 20% (10 000)
+      // 80 000 - 100 000 : 30% (18 000)
+      // 100 000 - 180 000 : 34% (22 000)
+      // > 180 000 : 37% (27 400)
+      let tauxMarginalActuel = 0;
+      let sommeADeduireActuel = 0;
+      if (rniAnnuel <= 40000) { tauxMarginalActuel = 0; sommeADeduireActuel = 0; }
+      else if (rniAnnuel <= 60000) { tauxMarginalActuel = 0.10; sommeADeduireActuel = 4000; }
+      else if (rniAnnuel <= 80000) { tauxMarginalActuel = 0.20; sommeADeduireActuel = 10000; }
+      else if (rniAnnuel <= 100000) { tauxMarginalActuel = 0.30; sommeADeduireActuel = 18000; }
+      else if (rniAnnuel <= 180000) { tauxMarginalActuel = 0.34; sommeADeduireActuel = 22000; }
+      else { tauxMarginalActuel = 0.37; sommeADeduireActuel = 27400; }
+
+      const irBrutActuelAn = Math.max(0, rniAnnuel * tauxMarginalActuel - sommeADeduireActuel);
+      const irNetActuelAn = Math.max(0, irBrutActuelAn - deductionFamilleAn);
+      const irActuelMois = irNetActuelAn / 12;
+      const netActuelMois = brut - totalCotisationsMois - irActuelMois;
+      const tauxReelActuel = brut > 0 ? (irActuelMois / brut) : 0;
+
+      // Tranche par tranche Actuel
+      const tranchesActuelDef = [
+        { name: "Tranche 1", min: 0, max: 40000, rate: 0.00, label: "0 à 40 000 DH" },
+        { name: "Tranche 2", min: 40000, max: 60000, rate: 0.10, label: "40 001 à 60 000 DH" },
+        { name: "Tranche 3", min: 60000, max: 80000, rate: 0.20, label: "60 001 à 80 000 DH" },
+        { name: "Tranche 4", min: 80000, max: 100000, rate: 0.30, label: "80 001 à 100 000 DH" },
+        { name: "Tranche 5", min: 100000, max: 180000, rate: 0.34, label: "100 001 à 180 000 DH" },
+        { name: "Tranche 6", min: 180000, max: Infinity, rate: 0.37, label: "> 180 000 DH" }
+      ];
+
+      const tranchesActuelDetails = tranchesActuelDef.map(t => {
+        let taxable = 0;
+        if (rniAnnuel > t.min) {
+          taxable = Math.min(rniAnnuel, t.max) - t.min;
+        }
+        return {
+          ...t,
+          taxable,
+          ir: taxable * t.rate
+        };
+      });
+
+      // --- BARÈME RÉFORME (Hypothèse annoncée 2027-2031) ---
+      // 0 - 60 000 : 0% (0)
+      // 60 000 - 180 000 : 10% (6 000)
+      // 180 000 - 480 000 : 20% (24 000)
+      // > 480 000 : 30% (72 000)
+      let tauxMarginalReforme = 0;
+      let sommeADeduireReforme = 0;
+      if (rniAnnuel <= 60000) { tauxMarginalReforme = 0; sommeADeduireReforme = 0; }
+      else if (rniAnnuel <= 180000) { tauxMarginalReforme = 0.10; sommeADeduireReforme = 6000; }
+      else if (rniAnnuel <= 480000) { tauxMarginalReforme = 0.20; sommeADeduireReforme = 24000; }
+      else { tauxMarginalReforme = 0.30; sommeADeduireReforme = 72000; }
+
+      const irBrutReformeAn = Math.max(0, rniAnnuel * tauxMarginalReforme - sommeADeduireReforme);
+      const irNetReformeAn = Math.max(0, irBrutReformeAn - deductionFamilleAn);
+      const irReformeMois = irNetReformeAn / 12;
+      const netReformeMois = brut - totalCotisationsMois - irReformeMois;
+      const tauxReelReforme = brut > 0 ? (irReformeMois / brut) : 0;
+
+      // Tranche par tranche Réforme
+      const tranchesReformeDef = [
+        { name: "Tranche 1", min: 0, max: 60000, rate: 0.00, label: "0 à 60 000 DH" },
+        { name: "Tranche 2", min: 60000, max: 180000, rate: 0.10, label: "60 001 à 180 000 DH" },
+        { name: "Tranche 3", min: 180000, max: 480000, rate: 0.20, label: "180 001 à 480 000 DH" },
+        { name: "Tranche 4", min: 480000, max: Infinity, rate: 0.30, label: "> 480 000 DH" }
+      ];
+
+      const tranchesReformeDetails = tranchesReformeDef.map(t => {
+        let taxable = 0;
+        if (rniAnnuel > t.min) {
+          taxable = Math.min(rniAnnuel, t.max) - t.min;
+        }
+        return {
+          ...t,
+          taxable,
+          ir: taxable * t.rate
+        };
+      });
+
+      // Impact & Différences
+      const gainMois = irActuelMois - irReformeMois;
+      const gainAn = gainMois * 12;
+      const hausseNetPct = netActuelMois > 0 ? (gainMois / netActuelMois) : 0;
+      const baisseTauxPoints = (tauxReelActuel - tauxReelReforme) * 100;
+
+      return {
+        brut,
+        brutAnnuel,
+        dependents: dep,
+        deductionFamilleAn,
+        deductionFamilleMois,
+        cotisations: {
+          cnssMois,
+          amoMois,
+          totalMois: totalCotisationsMois,
+          totalAn: totalCotisationsAn
+        },
+        fraisPro: {
+          taux: tauxFraisPro,
+          mois: fraisProMois,
+          an: fraisProAn
+        },
+        rni: {
+          mois: rniMois,
+          an: rniAnnuel
+        },
+        actuel: {
+          tauxMarginal: tauxMarginalActuel,
+          sommeADeduire: sommeADeduireActuel,
+          irBrutAn: irBrutActuelAn,
+          irNetAn: irNetActuelAn,
+          irMois: irActuelMois,
+          netMois: netActuelMois,
+          tauxReel: tauxReelActuel,
+          tranches: tranchesActuelDetails
+        },
+        reforme: {
+          tauxMarginal: tauxMarginalReforme,
+          sommeADeduire: sommeADeduireReforme,
+          irBrutAn: irBrutReformeAn,
+          irNetAn: irNetReformeAn,
+          irMois: irReformeMois,
+          netMois: netReformeMois,
+          tauxReel: tauxReelReforme,
+          tranches: tranchesReformeDetails
+        },
+        gainMois,
+        gainAn,
+        hausseNetPct,
+        baisseTauxPoints
+      };
+    }
+
+    // Reference profiles from the original dataset
+    const PRESET_PROFILES = [
+      { brut: 3500, label: "3 500 DH", role: "SMIG / Ouvrier", tag: "Exonéré" },
+      { brut: 6000, label: "6 000 DH", role: "Technicien", tag: "+16 DH" },
+      { brut: 10000, label: "10 000 DH", role: "Cadre Junior", tag: "+401 DH" },
+      { brut: 15000, label: "15 000 DH", role: "Cadre Confirmé", tag: "+1 421 DH", popular: true },
+      { brut: 20000, label: "20 000 DH", role: "Ingénieur Senior", tag: "+2 498 DH" },
+      { brut: 40000, label: "40 000 DH", role: "Directeur / Manager", tag: "+5 821 DH" },
+      { brut: 100000, label: "100 000 DH", role: "Top Management", tag: "+10 335 DH" },
+    ];
+
+    // Formatters
+    const fmtDH = (val, decimals = 2) => {
+      if (val === undefined || val === null || isNaN(val)) return "0.00 DH";
+      return new Intl.NumberFormat('fr-MA', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      }).format(val) + " DH";
+    };
+
+    const fmtNum = (val, decimals = 2) => {
+      if (val === undefined || val === null || isNaN(val)) return "0";
+      return new Intl.NumberFormat('fr-MA', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      }).format(val);
+    };
+
+    const fmtPct = (val, decimals = 2) => {
+      if (val === undefined || val === null || isNaN(val)) return "0.00%";
+      return (val * 100).toFixed(decimals) + "%";
+    };
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [brutInput, setBrutInput] = useState(15000);
+      const [dependents, setDependents] = useState(0);
+      const [trancheTab, setTrancheTab] = useState("both"); // 'both', 'actuel', 'reforme'
+
+      // Calculation Result
+      const sim = useMemo(() => {
+        return calculateIRSimulation(brutInput, dependents);
+      }, [brutInput, dependents]);
+
+      // Confetti trigger for high gain or preset selection
+      const triggerConfetti = () => {
+        if (window.confetti) {
+          window.confetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.7 },
+            colors: ['#10b981', '#059669', '#34d399', '#3b82f6', '#f59e0b']
+          });
+        }
+      };
+
+      const handlePresetClick = (brut) => {
+        setBrutInput(brut);
+        triggerConfetti();
+      };
+
+      return (
+        <div className="flex flex-col min-h-screen">
+          {/* Top Banner / Morocco Seal */}
+          <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-xl sticky top-0 z-50">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-20">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-800 p-0.5 shadow-lg shadow-emerald-500/20 flex items-center justify-center">
+                    <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                      <svg className="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                        Royaume du Maroc • CGI LF 2025
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                        Horizon 2027–2031
+                      </span>
+                    </div>
+                    <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                      Simulateur IR — votre salaire
+                    </h1>
+                  </div>
+                </div>
+
+                <div className="hidden md:flex items-center space-x-3">
+                  <a 
+                    href="#calculator-section" 
+                    className="inline-flex items-center space-x-2 px-4 py-2 text-sm font-semibold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/25 transition-all transform hover:-translate-y-0.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    <span>Simuler mon salaire</span>
+                  </a>
+                  <a
+                    href="https://forkanimahdi.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-2 px-3.5 py-2 text-xs font-medium rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                  >
+                    <span>@forkanimahdi</span>
+                    <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Hero Highlight Stats Cards */}
+          <section className="relative overflow-hidden pt-8 pb-6 border-b border-slate-800/80">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center max-w-3xl mx-auto mb-8">
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }} 
+                  animate={{ opacity: 1, y: 0 }}
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-medium mb-3"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  Votre simulation personnelle en temps réel
+                </motion.div>
+                <motion.h2 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight"
+                >
+                  Simulez l'impact sur <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">votre salaire net</span>
+                </motion.h2>
+                <motion.p 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mt-3 text-sm sm:text-base text-slate-400"
+                >
+                  Mesurez avec précision l'effet de l'abaissement des taux, de l'exonération élargie à 60 000 DH et du nouveau barème fiscal à 4 tranches.
+                </motion.p>
+              </div>
+
+              {/* 4 Key Pillar Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.1 }}
+                  className="bg-slate-900/60 backdrop-blur border border-slate-800 p-4 rounded-2xl relative overflow-hidden group hover:border-emerald-500/40 transition"
+                >
+                  <div className="text-xs font-medium text-slate-400">Seuil d'Exonération Total</div>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-2xl font-black text-emerald-400">60 000</span>
+                    <span className="text-xs text-slate-400">DH/an</span>
+                  </div>
+                  <div className="mt-1 flex items-center text-xs text-emerald-400/90 gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+                    <span>+50% vs actuel (40k DH)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Jusqu'à ~6 000 DH brut/mois à 0% IR</div>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="bg-slate-900/60 backdrop-blur border border-slate-800 p-4 rounded-2xl relative overflow-hidden group hover:border-blue-500/40 transition"
+                >
+                  <div className="text-xs font-medium text-slate-400">Taux Marginal Maximal</div>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-2xl font-black text-blue-400">30%</span>
+                    <span className="text-xs text-slate-400">max</span>
+                  </div>
+                  <div className="mt-1 flex items-center text-xs text-blue-400/90 gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+                    <span>Baisse de 7 points (vs 37%)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Au-delà de 480 000 DH/an</div>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="bg-slate-900/60 backdrop-blur border border-slate-800 p-4 rounded-2xl relative overflow-hidden group hover:border-purple-500/40 transition"
+                >
+                  <div className="text-xs font-medium text-slate-400">Simplification du Barème</div>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-2xl font-black text-purple-400">4 Tranches</span>
+                  </div>
+                  <div className="mt-1 flex items-center text-xs text-purple-400/90 gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span>Au lieu de 6 tranches</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">0%, 10%, 20% et 30%</div>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="bg-slate-900/60 backdrop-blur border border-slate-800 p-4 rounded-2xl relative overflow-hidden group hover:border-amber-500/40 transition"
+                >
+                  <div className="text-xs font-medium text-slate-400">Gain Annuel Maximal Observé</div>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-2xl font-black text-amber-400">+124 026</span>
+                    <span className="text-xs text-slate-400">DH/an</span>
+                  </div>
+                  <div className="mt-1 flex items-center text-xs text-amber-400/90 gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>+10 335 DH / mois</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Pour les profils de 100k DH</div>
+                </motion.div>
+              </div>
+            </div>
+          </section>
+
+          {/* MAIN CONTENT — simulateur personnel */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8" id="calculator-section">
+              <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="space-y-8"
+                >
+                  {/* Controller Card */}
+                  <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-800/80 pb-6 mb-6">
+                      <div>
+                        <h3 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-3">
+                          <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                          </span>
+                          Configuration de votre profil salarial
+                        </h3>
+                        <p className="text-sm text-slate-400 mt-1">
+                          Ajustez votre salaire brut mensuel et le nombre de personnes à charge pour simuler vos déductions.
+                        </p>
+                      </div>
+
+                      {/* Dependents Stepper */}
+                      <div className="flex items-center gap-3 bg-slate-950/70 p-3 rounded-2xl border border-slate-800 self-start lg:self-auto">
+                        <div className="text-xs">
+                          <div className="font-semibold text-slate-300">Personnes à charge</div>
+                          <div className="text-slate-500 text-[11px]">Déduction: {sim.deductionFamilleAn} DH/an (art. 74)</div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setDependents(Math.max(0, dependents - 1))}
+                            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold flex items-center justify-center transition border border-slate-700"
+                            disabled={dependents <= 0}
+                          >
+                            -
+                          </button>
+                          <span className="w-8 text-center font-mono font-bold text-lg text-emerald-400">
+                            {dependents}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDependents(Math.min(6, dependents + 1))}
+                            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold flex items-center justify-center transition border border-slate-700"
+                            disabled={dependents >= 6}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Salary Slider & Input */}
+                    <div className="space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <label className="text-sm font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
+                          <span>Salaire Brut Mensuel (DH)</span>
+                          <span className="text-xs font-normal normal-case text-slate-400">
+                            (Annuel: {fmtDH(sim.brutAnnuel, 0)})
+                          </span>
+                        </label>
+                        
+                        <div className="relative w-full sm:w-64">
+                          <input
+                            type="number"
+                            min="1000"
+                            max="200000"
+                            step="500"
+                            value={brutInput}
+                            onChange={(e) => setBrutInput(Number(e.target.value) || 0)}
+                            className="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-4 py-3 text-right font-mono font-bold text-xl text-emerald-400 transition"
+                          />
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500 pointer-events-none">
+                            DH / mois
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Slider Input */}
+                      <div className="relative pt-2">
+                        <input
+                          type="range"
+                          min="3000"
+                          max="100000"
+                          step="500"
+                          value={brutInput}
+                          onChange={(e) => setBrutInput(Number(e.target.value))}
+                          className="w-full h-3 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none"
+                        />
+                        <div className="flex justify-between text-[11px] font-mono text-slate-500 mt-2">
+                          <span>3 000 DH</span>
+                          <span>20 000 DH</span>
+                          <span>40 000 DH</span>
+                          <span>60 000 DH</span>
+                          <span>80 000 DH</span>
+                          <span>100 000 DH</span>
+                        </div>
+                      </div>
+
+                      {/* Presets Chips */}
+                      <div>
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Exemples rapides (ou saisissez votre propre salaire) :
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {PRESET_PROFILES.map((p) => {
+                            const isSelected = Number(brutInput) === p.brut;
+                            return (
+                              <button
+                                key={p.brut}
+                                onClick={() => handlePresetClick(p.brut)}
+                                className={`px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 border ${
+                                  isSelected
+                                    ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm shadow-emerald-500/20 scale-105"
+                                    : "bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60"
+                                }`}
+                              >
+                                <span className="font-bold">{p.label}</span>
+                                <span className="text-[11px] text-slate-400">({p.role})</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                                  isSelected ? "bg-emerald-500 text-slate-950 font-bold" : "bg-slate-800 text-emerald-400"
+                                }`}>
+                                  {p.tag}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* HERO RESULT: IMPACT BANNER */}
+                  <motion.div
+                    key={`hero-${sim.brut}-${sim.dependents}`}
+                    initial={{ scale: 0.98, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950/90 via-slate-900 to-teal-950/70 border-2 border-emerald-500/40 p-6 sm:p-8 shadow-glow-emerald"
+                  >
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                      <div className="lg:col-span-7 space-y-4">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/30">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                          RÉSULTAT DE LA RÉFORME FISCALE
+                        </div>
+                        
+                        <div>
+                          <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                            Votre Gain Net Supplémentaire
+                          </div>
+                          <div className="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-white font-mono tracking-tight mt-1">
+                            +{fmtDH(sim.gainMois)}
+                            <span className="text-xl sm:text-2xl text-emerald-400 font-sans font-bold ml-2">/ mois</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-4 pt-2">
+                          <div className="bg-slate-950/70 border border-slate-800/80 px-4 py-2.5 rounded-xl">
+                            <span className="text-xs text-slate-400 block">Gain Annuel Net</span>
+                            <span className="text-lg font-bold text-emerald-400 font-mono">
+                              +{fmtDH(sim.gainAn, 2)}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-950/70 border border-slate-800/80 px-4 py-2.5 rounded-xl">
+                            <span className="text-xs text-slate-400 block">Hausse du Salaire Net</span>
+                            <span className="text-lg font-bold text-teal-300 font-mono">
+                              +{fmtPct(sim.hausseNetPct, 2)}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-950/70 border border-slate-800/80 px-4 py-2.5 rounded-xl">
+                            <span className="text-xs text-slate-400 block">Baisse du Taux Réel</span>
+                            <span className="text-lg font-bold text-cyan-300 font-mono">
+                              -{fmtNum(sim.baisseTauxPoints, 2)} pts
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Before / After Net Salary Quick Preview */}
+                      <div className="lg:col-span-5 bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4">
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Comparaison Immédiate du Net
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex justify-between text-xs text-slate-400 mb-1">
+                              <span>Salaire Net Actuel (LF 2025)</span>
+                              <span className="font-mono text-slate-300">{fmtPct(sim.actuel.netMois / sim.brut)} du brut</span>
+                            </div>
+                            <div className="flex items-baseline justify-between bg-slate-900 px-4 py-3 rounded-xl border border-slate-800">
+                              <span className="text-sm font-medium text-slate-400">Actuel</span>
+                              <span className="text-xl font-bold font-mono text-slate-200">
+                                {fmtDH(sim.actuel.netMois)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-center -my-1 text-emerald-400">
+                            <svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-xs text-emerald-400 mb-1 font-medium">
+                              <span>Nouveau Salaire Net (Réforme)</span>
+                              <span className="font-mono">{fmtPct(sim.reforme.netMois / sim.brut)} du brut</span>
+                            </div>
+                            <div className="flex items-baseline justify-between bg-emerald-950/50 px-4 py-3 rounded-xl border border-emerald-500/40">
+                              <span className="text-sm font-semibold text-emerald-400">Projet Réforme</span>
+                              <span className="text-2xl font-black font-mono text-emerald-300">
+                                {fmtDH(sim.reforme.netMois)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* 3 COMPARATIVE DETAILED COLUMNS */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    {/* Column 1: Base Imposable & Déductions */}
+                    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4">
+                      <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                        <div className="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white text-sm">1. Assiette & Déductions</h4>
+                          <span className="text-xs text-slate-400">Identique sous les 2 régimes</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">Salaire Brut Mensuel</span>
+                          <span className="font-mono font-semibold text-white">{fmtDH(sim.brut)}</span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block">Cotisation CNSS (4.48%)</span>
+                            <span className="text-[10px] text-slate-500">Plafond 6 000 DH/m</span>
+                          </div>
+                          <span className="font-mono font-semibold text-rose-400">-{fmtDH(sim.cotisations.cnssMois)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block">Cotisation AMO (2.26%)</span>
+                            <span className="text-[10px] text-slate-500">Sans plafond</span>
+                          </div>
+                          <span className="font-mono font-semibold text-rose-400">-{fmtDH(sim.cotisations.amoMois)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60 bg-slate-950/40 px-2 rounded-lg">
+                          <span className="font-medium text-slate-300">Total Cotisations Sociales</span>
+                          <span className="font-mono font-bold text-rose-300">-{fmtDH(sim.cotisations.totalMois)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block">Frais Professionnels</span>
+                            <span className="text-[10px] text-slate-500">Taux {fmtPct(sim.fraisPro.taux, 0)} (Max 35k DH/an)</span>
+                          </div>
+                          <span className="font-mono font-semibold text-amber-400">-{fmtDH(sim.fraisPro.mois)}</span>
+                        </div>
+
+                        <div className="pt-2">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Revenu Net Imposable (RNI)
+                          </div>
+                          <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">RNI Mensuel :</span>
+                              <span className="font-mono font-bold text-emerald-400">{fmtDH(sim.rni.mois)}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">RNI Annuel :</span>
+                              <span className="font-mono font-medium text-slate-400">{fmtDH(sim.rni.an, 0)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Barème ACTUEL (LF 2025) */}
+                    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4">
+                      <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                        <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white text-sm">2. Barème ACTUEL</h4>
+                          <span className="text-xs text-blue-400">LF 2025 (En vigueur 2026)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">Taux marginal de la tranche</span>
+                          <span className="font-mono font-bold text-blue-400">{fmtPct(sim.actuel.tauxMarginal, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">Somme à déduire</span>
+                          <span className="font-mono font-semibold text-slate-300">{fmtDH(sim.actuel.sommeADeduire, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">IR Brut Annuel</span>
+                          <span className="font-mono font-semibold text-slate-300">{fmtDH(sim.actuel.irBrutAn)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block">Déduction Personnes à charge</span>
+                            <span className="text-[10px] text-slate-500">{sim.dependents} pers × 500 DH/an</span>
+                          </div>
+                          <span className="font-mono font-semibold text-emerald-400">-{fmtDH(sim.deductionFamilleAn, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60 bg-slate-950/40 px-2 rounded-lg">
+                          <span className="font-medium text-slate-300">IR Net Annuel</span>
+                          <span className="font-mono font-bold text-slate-200">{fmtDH(sim.actuel.irNetAn)}</span>
+                        </div>
+
+                        <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-2 mt-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">IR Mensuel Retenu :</span>
+                            <span className="font-mono font-bold text-rose-400 text-sm">{fmtDH(sim.actuel.irMois)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500">Taux Réel Effectif :</span>
+                            <span className="font-mono font-semibold text-blue-300">{fmtPct(sim.actuel.tauxReel, 2)}</span>
+                          </div>
+                          <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+                            <span className="font-bold text-slate-300">Salaire Net :</span>
+                            <span className="font-mono font-black text-white text-base">{fmtDH(sim.actuel.netMois)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 3: Barème RÉFORME */}
+                    <div className="bg-slate-900/70 border-2 border-emerald-500/40 rounded-2xl p-6 space-y-4 shadow-lg shadow-emerald-500/10">
+                      <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white text-sm">3. Barème RÉFORME</h4>
+                          <span className="text-xs text-emerald-400">Hypothèse annoncée (4 tranches)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">Taux marginal de la tranche</span>
+                          <span className="font-mono font-bold text-emerald-400">{fmtPct(sim.reforme.tauxMarginal, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">Somme à déduire</span>
+                          <span className="font-mono font-semibold text-slate-300">{fmtDH(sim.reforme.sommeADeduire, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <span className="text-slate-400">IR Brut Annuel</span>
+                          <span className="font-mono font-semibold text-slate-300">{fmtDH(sim.reforme.irBrutAn)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block">Déduction Personnes à charge</span>
+                            <span className="text-[10px] text-slate-500">{sim.dependents} pers × 500 DH/an</span>
+                          </div>
+                          <span className="font-mono font-semibold text-emerald-400">-{fmtDH(sim.deductionFamilleAn, 0)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1.5 border-b border-slate-800/60 bg-emerald-950/20 px-2 rounded-lg">
+                          <span className="font-medium text-emerald-300">IR Net Annuel</span>
+                          <span className="font-mono font-bold text-emerald-300">{fmtDH(sim.reforme.irNetAn)}</span>
+                        </div>
+
+                        <div className="bg-emerald-950/40 border border-emerald-500/30 p-3 rounded-xl space-y-2 mt-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">IR Mensuel Retenu :</span>
+                            <span className="font-mono font-bold text-emerald-400 text-sm">{fmtDH(sim.reforme.irMois)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500">Taux Réel Effectif :</span>
+                            <span className="font-mono font-semibold text-emerald-400">{fmtPct(sim.reforme.tauxReel, 2)}</span>
+                          </div>
+                          <div className="pt-2 border-t border-emerald-800/40 flex justify-between items-baseline">
+                            <span className="font-bold text-emerald-300">Nouveau Salaire Net :</span>
+                            <span className="font-mono font-black text-emerald-300 text-base">{fmtDH(sim.reforme.netMois)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* TRANCHE PAR TRANCHE DECOMPOSITION SECTION */}
+                  <div className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                      <div>
+                        <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                          <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                          Décomposition de l'IR Tranche par Tranche
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Calcul progressif exact pour un RNI annuel imposable de <strong className="text-white font-mono">{fmtDH(sim.rni.an, 2)}</strong>
+                        </p>
+                      </div>
+
+                      <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold">
+                        <button
+                          onClick={() => setTrancheTab("both")}
+                          className={`px-3 py-1.5 rounded-lg transition ${trancheTab === "both" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Vue Côte à Côte
+                        </button>
+                        <button
+                          onClick={() => setTrancheTab("actuel")}
+                          className={`px-3 py-1.5 rounded-lg transition ${trancheTab === "actuel" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Actuel (6 tranches)
+                        </button>
+                        <button
+                          onClick={() => setTrancheTab("reforme")}
+                          className={`px-3 py-1.5 rounded-lg transition ${trancheTab === "reforme" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Réforme (4 tranches)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tranche Tables */}
+                    <div className={`grid gap-6 ${trancheTab === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
+                      
+                      {/* Barème Actuel Table */}
+                      {(trancheTab === "both" || trancheTab === "actuel") && (
+                        <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/60">
+                          <div className="bg-slate-900/90 px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                              Barème ACTUEL (LF 2025)
+                            </span>
+                            <span className="text-xs font-mono text-slate-400">
+                              IR Total: <strong className="text-white">{fmtDH(sim.actuel.irBrutAn)}</strong>
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-900/50 text-slate-400 border-b border-slate-800">
+                                <tr>
+                                  <th className="py-2.5 px-3 font-semibold">Tranche</th>
+                                  <th className="py-2.5 px-3 font-semibold">Fourchette (DH)</th>
+                                  <th className="py-2.5 px-3 font-semibold text-center">Taux</th>
+                                  <th className="py-2.5 px-3 font-semibold text-right">Montant Imposé</th>
+                                  <th className="py-2.5 px-3 font-semibold text-right">IR Généré</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/60 font-mono">
+                                {sim.actuel.tranches.map((t, idx) => {
+                                  const isActive = t.taxable > 0;
+                                  return (
+                                    <tr key={idx} className={isActive ? "bg-blue-500/5 hover:bg-blue-500/10 transition" : "text-slate-600"}>
+                                      <td className="py-2.5 px-3 font-sans font-medium text-slate-300">{t.name}</td>
+                                      <td className="py-2.5 px-3 text-slate-400">{t.label}</td>
+                                      <td className="py-2.5 px-3 text-center font-bold text-blue-400">{fmtPct(t.rate, 0)}</td>
+                                      <td className="py-2.5 px-3 text-right text-slate-200">{fmtNum(t.taxable, 2)}</td>
+                                      <td className="py-2.5 px-3 text-right font-bold text-white">{fmtNum(t.ir, 2)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot className="bg-slate-900/80 font-mono text-xs border-t border-slate-800 font-semibold">
+                                <tr>
+                                  <td colSpan="4" className="py-2.5 px-3 text-right text-slate-400 font-sans">Total IR Brut Annuel :</td>
+                                  <td className="py-2.5 px-3 text-right text-blue-400 font-bold">{fmtDH(sim.actuel.irBrutAn)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan="4" className="py-2 px-3 text-right text-slate-400 font-sans">Déduction Charges Famille ({sim.dependents} pers) :</td>
+                                  <td className="py-2 px-3 text-right text-emerald-400">-{fmtDH(sim.deductionFamilleAn, 0)}</td>
+                                </tr>
+                                <tr className="bg-slate-900 text-sm">
+                                  <td colSpan="4" className="py-2.5 px-3 text-right text-white font-sans font-bold">IR Net Mensuel à Payer :</td>
+                                  <td className="py-2.5 px-3 text-right text-rose-400 font-black">{fmtDH(sim.actuel.irMois)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Barème Réforme Table */}
+                      {(trancheTab === "both" || trancheTab === "reforme") && (
+                        <div className="border border-emerald-500/30 rounded-2xl overflow-hidden bg-slate-950/60 shadow-lg shadow-emerald-500/5">
+                          <div className="bg-emerald-950/40 px-4 py-3 border-b border-emerald-500/20 flex justify-between items-center">
+                            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                              Barème RÉFORME (Hypothèse)
+                            </span>
+                            <span className="text-xs font-mono text-emerald-300">
+                              IR Total: <strong className="text-white">{fmtDH(sim.reforme.irBrutAn)}</strong>
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-900/50 text-slate-400 border-b border-slate-800">
+                                <tr>
+                                  <th className="py-2.5 px-3 font-semibold">Tranche</th>
+                                  <th className="py-2.5 px-3 font-semibold">Fourchette (DH)</th>
+                                  <th className="py-2.5 px-3 font-semibold text-center">Taux</th>
+                                  <th className="py-2.5 px-3 font-semibold text-right">Montant Imposé</th>
+                                  <th className="py-2.5 px-3 font-semibold text-right">IR Généré</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/60 font-mono">
+                                {sim.reforme.tranches.map((t, idx) => {
+                                  const isActive = t.taxable > 0;
+                                  return (
+                                    <tr key={idx} className={isActive ? "bg-emerald-500/5 hover:bg-emerald-500/10 transition" : "text-slate-600"}>
+                                      <td className="py-2.5 px-3 font-sans font-medium text-slate-300">{t.name}</td>
+                                      <td className="py-2.5 px-3 text-slate-400">{t.label}</td>
+                                      <td className="py-2.5 px-3 text-center font-bold text-emerald-400">{fmtPct(t.rate, 0)}</td>
+                                      <td className="py-2.5 px-3 text-right text-slate-200">{fmtNum(t.taxable, 2)}</td>
+                                      <td className="py-2.5 px-3 text-right font-bold text-emerald-300">{fmtNum(t.ir, 2)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot className="bg-slate-900/80 font-mono text-xs border-t border-slate-800 font-semibold">
+                                <tr>
+                                  <td colSpan="4" className="py-2.5 px-3 text-right text-slate-400 font-sans">Total IR Brut Annuel :</td>
+                                  <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">{fmtDH(sim.reforme.irBrutAn)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan="4" className="py-2 px-3 text-right text-slate-400 font-sans">Déduction Charges Famille ({sim.dependents} pers) :</td>
+                                  <td className="py-2 px-3 text-right text-emerald-400">-{fmtDH(sim.deductionFamilleAn, 0)}</td>
+                                </tr>
+                                <tr className="bg-emerald-950/50 text-sm">
+                                  <td colSpan="4" className="py-2.5 px-3 text-right text-emerald-200 font-sans font-bold">Nouveau IR Net Mensuel :</td>
+                                  <td className="py-2.5 px-3 text-right text-emerald-300 font-black">{fmtDH(sim.reforme.irMois)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                </motion.div>
+          </main>
+
+          {/* FOOTER */}
+          <footer className="mt-auto border-t border-slate-800 bg-slate-950/95 backdrop-blur py-8">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">
+                    MA
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <span className="font-semibold text-slate-300 block">Simulateur Fiscal IR Maroc 2026</span>
+                    Conforme aux règles de liquidation du CGI marocain.
+                  </div>
+                </div>
+
+                {/* EXACT USER MANDATED FOOTER LINK */}
+                <div className="flex items-center space-x-2 text-sm text-slate-300">
+                  <span>build with</span>
+                  <a
+                    href="https://forkanimahdi.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 border border-slate-800 hover:border-emerald-500/40 font-mono font-medium transition group"
+                  >
+                    <span>@forkanimahdi</span>
+                    <svg className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-900 text-center text-slate-600 text-[11px]">
+                Simulateur personnel indicatif : chacun peut saisir son salaire brut et estimer l'impact de la réforme IR.
+              </div>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    // Mount React App — surface errors instead of leaving the loading spinner forever
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    } catch (err) {
+      console.error(err);
+      document.getElementById('root').innerHTML =
+        '<div style="padding:2rem;color:#f87171;font-family:sans-serif;max-width:40rem;margin:4rem auto">' +
+        '<h2 style="color:#fff;margin-bottom:0.5rem">Erreur de chargement du simulateur</h2>' +
+        '<pre style="white-space:pre-wrap;background:#1e293b;padding:1rem;border-radius:0.75rem">' +
+        String(err && err.message ? err.message : err) +
+        '</pre></div>';
+    }
+  </script>
+</body>
+</html>
